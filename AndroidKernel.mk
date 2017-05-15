@@ -1,5 +1,9 @@
+# Modified from original AOSP version for in-tree builds with Maru OS
+
 #Android makefile to build kernel as a part of Android Build
 PERL		= perl
+
+KERNEL_LOCAL_PATH := $(call my-dir)
 
 KERNEL_TARGET := $(strip $(INSTALLED_KERNEL_TARGET))
 ifeq ($(KERNEL_TARGET),)
@@ -13,19 +17,6 @@ else
 KERNEL_ARCH := $(TARGET_KERNEL_ARCH)
 endif
 
-TARGET_KERNEL_HEADER_ARCH := $(strip $(TARGET_KERNEL_HEADER_ARCH))
-ifeq ($(TARGET_KERNEL_HEADER_ARCH),)
-KERNEL_HEADER_ARCH := $(KERNEL_ARCH)
-else
-$(warning Forcing kernel header generation only for '$(TARGET_KERNEL_HEADER_ARCH)')
-KERNEL_HEADER_ARCH := $(TARGET_KERNEL_HEADER_ARCH)
-endif
-
-KERNEL_HEADER_DEFCONFIG := $(strip $(KERNEL_HEADER_DEFCONFIG))
-ifeq ($(KERNEL_HEADER_DEFCONFIG),)
-KERNEL_HEADER_DEFCONFIG := $(KERNEL_DEFCONFIG)
-endif
-
 # Force 32-bit binder IPC for 64bit kernel with 32bit userspace
 ifeq ($(KERNEL_ARCH),arm64)
 ifeq ($(TARGET_ARCH),arm)
@@ -35,7 +26,7 @@ endif
 
 TARGET_KERNEL_CROSS_COMPILE_PREFIX := $(strip $(TARGET_KERNEL_CROSS_COMPILE_PREFIX))
 ifeq ($(TARGET_KERNEL_CROSS_COMPILE_PREFIX),)
-KERNEL_CROSS_COMPILE := arm-eabi-
+KERNEL_CROSS_COMPILE := aarch64-linux-android-
 else
 KERNEL_CROSS_COMPILE := $(TARGET_KERNEL_CROSS_COMPILE_PREFIX)
 endif
@@ -66,72 +57,42 @@ $(info Using appended DTB)
 TARGET_PREBUILT_INT_KERNEL := $(TARGET_PREBUILT_INT_KERNEL)-dtb
 endif
 
-KERNEL_HEADERS_INSTALL := $(KERNEL_OUT)/usr
-KERNEL_MODULES_INSTALL := system
-KERNEL_MODULES_OUT := $(TARGET_OUT)/lib/modules
-
 TARGET_PREBUILT_KERNEL := $(TARGET_PREBUILT_INT_KERNEL)
 
-define mv-modules
-mdpath=`find $(KERNEL_MODULES_OUT) -type f -name modules.dep`;\
-if [ "$$mdpath" != "" ];then\
-mpath=`dirname $$mdpath`;\
-ko=`find $$mpath/kernel -type f -name *.ko`;\
-for i in $$ko; do mv $$i $(KERNEL_MODULES_OUT)/; done;\
-fi
-endef
-
-define clean-module-folder
-mdpath=`find $(KERNEL_MODULES_OUT) -type f -name modules.dep`;\
-if [ "$$mdpath" != "" ];then\
-mpath=`dirname $$mdpath`; rm -rf $$mpath;\
-fi
-endef
+$(info $(TARGET_PREBUILT_INT_KERNEL))
+$(info $(KERNEL_CONFIG))
 
 $(KERNEL_OUT):
 	mkdir -p $(KERNEL_OUT)
 
 $(KERNEL_CONFIG): $(KERNEL_OUT)
-	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_DEFCONFIG)
+	$(MAKE) -C $(KERNEL_LOCAL_PATH) O=../../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_DEFCONFIG)
 	$(hide) if [ ! -z "$(KERNEL_CONFIG_OVERRIDE)" ]; then \
 			echo "Overriding kernel config with '$(KERNEL_CONFIG_OVERRIDE)'"; \
 			echo $(KERNEL_CONFIG_OVERRIDE) >> $(KERNEL_OUT)/.config; \
-			$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) oldconfig; fi
+			$(MAKE) -C $(KERNEL_LOCAL_PATH) O=../../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) oldconfig; fi
 
-$(TARGET_PREBUILT_INT_KERNEL): $(KERNEL_OUT) $(KERNEL_HEADERS_INSTALL)
+$(TARGET_PREBUILT_INT_KERNEL): $(KERNEL_OUT) $(KERNEL_CONFIG)
 	$(hide) echo "Building kernel..."
 	$(hide) rm -rf $(KERNEL_OUT)/arch/$(KERNEL_ARCH)/boot/dts
-	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_CFLAGS)
-	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_CFLAGS) modules
-	$(MAKE) -C kernel O=../$(KERNEL_OUT) INSTALL_MOD_PATH=../../$(KERNEL_MODULES_INSTALL) INSTALL_MOD_STRIP=1 ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) modules_install
-	$(mv-modules)
-	$(clean-module-folder)
-
-$(KERNEL_HEADERS_INSTALL): $(KERNEL_OUT)
-	$(hide) if [ ! -z "$(KERNEL_HEADER_DEFCONFIG)" ]; then \
-			$(hide) rm -f ../$(KERNEL_CONFIG); \
-			$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_HEADER_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_HEADER_DEFCONFIG); \
-if test "$(TARGET_COMPILE_WITH_MSM_KERNEL)" = "true"; then \
-			$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_HEADER_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) headers_install; fi \
-fi
-	$(hide) if [ "$(KERNEL_HEADER_DEFCONFIG)" != "$(KERNEL_DEFCONFIG)" ]; then \
-			echo "Used a different defconfig for header generation"; \
-			$(hide) rm -f ../$(KERNEL_CONFIG); \
-			$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_DEFCONFIG); fi
-	$(hide) if [ ! -z "$(KERNEL_CONFIG_OVERRIDE)" ]; then \
-			echo "Overriding kernel config with '$(KERNEL_CONFIG_OVERRIDE)'"; \
-			echo $(KERNEL_CONFIG_OVERRIDE) >> $(KERNEL_OUT)/.config; \
-			$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) oldconfig; fi
+	$(MAKE) -C $(KERNEL_LOCAL_PATH) O=../../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_CFLAGS)
 
 kerneltags: $(KERNEL_OUT) $(KERNEL_CONFIG)
-	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) tags
+	$(MAKE) -C $(KERNEL_LOCAL_PATH) O=../../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) tags
 
 kernelconfig: $(KERNEL_OUT) $(KERNEL_CONFIG)
 	env KCONFIG_NOTIMESTAMP=true \
-	     $(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) menuconfig
+	     $(MAKE) -C $(KERNEL_LOCAL_PATH) O=../../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) menuconfig
 	env KCONFIG_NOTIMESTAMP=true \
-	     $(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) savedefconfig
+	     $(MAKE) -C $(KERNEL_LOCAL_PATH) O=../../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) savedefconfig
 	cp $(KERNEL_OUT)/defconfig kernel/arch/$(KERNEL_ARCH)/configs/$(KERNEL_DEFCONFIG)
+
+kernelclean:
+	$(MAKE) -C $(KERNEL_LOCAL_PATH) O=../../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) clean
+	$(hide) if [ -f "$(KERNEL_CONFIG)" ] ; then \
+			rm -r $(KERNEL_CONFIG); fi
+	$(hide) if [ -d "$(KERNEL_HEADERS_INSTALL)" ] ; then \
+			rm -r $(KERNEL_HEADERS_INSTALL); fi
 
 endif
 endif
